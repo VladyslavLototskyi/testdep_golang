@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://testapp:testapp@db:5432/testapp?sslmode=disable"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: testapp
+      POSTGRES_USER: testapp
+      POSTGRES_PASSWORD: testapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

@@ -1,37 +1,67 @@
 # golang-testapp
 
-Простое Go веб-приложение для практики деплоя.
+Простий Go вебзастосунок для практики деплою з PostgreSQL.
 
-## Что делает
+## Що робить
 
-- слушает один порт: `8080` по умолчанию
-- порт можно изменить через переменную окружения `PORT`
-- `GET /` возвращает JSON
-- `GET /health` возвращает JSON для health check
-- база данных не используется
+- слухає порт `8080` за замовчуванням
+- дозволяє змінити порт через змінну середовища `PORT`
+- підключається до PostgreSQL через `DATABASE_URL`
+- `GET /` повертає JSON з інформацією про застосунок
+- `GET /health` повертає JSON для health check застосунку
+- `GET /db-check` перевіряє доступність бази даних
 
-## Локальный запуск
+## Локальний запуск
+
+Без бази даних застосунок запуститься, але `GET /db-check` поверне `503`.
 
 ```bash
 go run .
 ```
 
-Проверка:
+Перевірка:
 
 ```bash
 curl http://localhost:8080/
 curl http://localhost:8080/health
+curl http://localhost:8080/db-check
 ```
 
-## Запуск на другом порту
+## Запуск з базою даних через Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Перевірка:
+
+```bash
+curl http://localhost:8080/
+curl http://localhost:8080/health
+curl http://localhost:8080/db-check
+```
+
+Очікувана відповідь від `GET /db-check`, коли PostgreSQL доступний:
+
+```json
+{"database":"postgres","status":"ok"}
+```
+
+## Запуск на іншому порту
 
 ```bash
 PORT=3000 go run .
 ```
 
+Якщо база запущена окремо:
+
+```bash
+PORT=3000 DATABASE_URL="postgres://testapp:testapp@localhost:5432/testapp?sslmode=disable" go run .
+```
+
 ## Docker
 
-Сборка:
+Збірка:
 
 ```bash
 docker build -t golang-testapp .
@@ -42,3 +72,5 @@ docker build -t golang-testapp .
 ```bash
 docker run --rm -p 8080:8080 golang-testapp
 ```
+
+Для перевірки бази даних з Docker зручніше використовувати `docker compose up --build`, бо він піднімає і застосунок, і PostgreSQL.
