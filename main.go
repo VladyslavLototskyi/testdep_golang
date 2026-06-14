@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -20,6 +25,8 @@ type response struct {
 }
 
 func main() {
+	loadDotEnv(".env")
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -44,9 +51,9 @@ func main() {
 }
 
 func openDatabase() *sql.DB {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Print("DATABASE_URL is not set; /db-check will return unavailable")
+	databaseURL, err := databaseURLFromEnv()
+	if err != nil {
+		log.Printf("%v; /db-check will return unavailable", err)
 		return nil
 	}
 
@@ -60,6 +67,86 @@ func openDatabase() *sql.DB {
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	return db
+}
+
+func loadDotEnv(path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("failed to read %s: %v", path, err)
+		}
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+
+		if key == "" {
+			continue
+		}
+
+		if _, exists := os.LookupEnv(key); !exists {
+			if err := os.Setenv(key, value); err != nil {
+				log.Printf("failed to set env %s: %v", key, err)
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("failed to parse %s: %v", path, err)
+	}
+}
+
+func databaseURLFromEnv() (string, error) {
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		return databaseURL, nil
+	}
+
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	name := os.Getenv("DB_NAME")
+	sslMode := os.Getenv("DB_SSLMODE")
+
+	if port == "" {
+		port = "5432"
+	}
+
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+
+	if host == "" || user == "" || password == "" || name == "" {
+		return "", fmt.Errorf("database configuration is incomplete: set DATABASE_URL or DB_HOST, DB_USER, DB_PASSWORD, DB_NAME")
+	}
+
+	databaseURL := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, password),
+		Host:   net.JoinHostPort(host, port),
+		Path:   "/" + name,
+	}
+
+	query := databaseURL.Query()
+	query.Set("sslmode", sslMode)
+	databaseURL.RawQuery = query.Encode()
+
+	return databaseURL.String(), nil
 }
 
 func jsonHandler(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +185,7 @@ func dbCheckHandler(db *sql.DB) http.HandlerFunc {
 		if db == nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 				"status": "unavailable",
-				"error":  "DATABASE_URL is not set",
+				"error":  "database configuration is not set",
 			})
 			return
 		}
